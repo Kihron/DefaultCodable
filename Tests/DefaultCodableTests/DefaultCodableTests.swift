@@ -157,4 +157,38 @@ final class DefaultCodableTests: XCTestCase {
             throw XCTSkip("macros are only supported when running tests for the host platform")
         #endif
     }
+
+    func testObservedProperty() throws {
+        #if canImport(DefaultCodableMacros)
+            assertMacroExpansion(
+                """
+                @DefaultCodable
+                struct Foo: Codable {
+                    var value = 0 {
+                        didSet { print("changed") }
+                    }
+                }
+                """,
+                expandedSource: """
+                struct Foo: Codable {
+                    var value = 0 {
+                        didSet { print("changed") }
+                    }
+
+                    enum CodingKeys: String, CodingKey {
+                        case value
+                    }
+
+                    init(from decoder: Decoder) throws {
+                        let container = try decoder.container(keyedBy: CodingKeys.self)
+                        self.value = try container.decodeIfPresent(Int.self, forKey: .value) ?? 0
+                    }
+                }
+                """,
+                macros: testMacros
+            )
+        #else
+            throw XCTSkip("macros are only supported when running tests for the host platform")
+        #endif
+    }
 }

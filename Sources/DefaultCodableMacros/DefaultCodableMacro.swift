@@ -11,13 +11,39 @@ public struct DefaultCodable: MemberMacro {
         conformingTo protocols: [TypeSyntax],
         in context: some MacroExpansionContext
     ) throws -> [DeclSyntax] {
-        // Collect stored properties (skip computed & static)
-        let storedProps: [VariableDeclSyntax] = declaration.memberBlock.members.compactMap { member in
-            guard
-                let varDecl = member.decl.as(VariableDeclSyntax.self),
-                // ignore computed properties (they have an accessor block)
-                varDecl.bindings.first?.accessorBlock == nil
-            else { return nil }
+        // Collect stored properties. Properties that are computed (i.e. have a
+        // `get` accessor) should be skipped, but stored properties with
+        // observers (`willSet`/`didSet`) are allowed.
+        let storedProps: [VariableDeclSyntax] = declaration.memberBlock.members.compactMap { (member: MemberBlockItemSyntax) -> VariableDeclSyntax? in
+            guard let varDecl = member.decl.as(VariableDeclSyntax.self) else { return nil }
+
+            // ignore static properties
+            if varDecl.modifiers.contains(where: { $0.name.tokenKind == .keyword(.static) }) {
+                return nil
+            }
+
+            guard let binding = varDecl.bindings.first else { return nil }
+
+            if let accessorBlock = binding.accessorBlock {
+                var hasGetter = false
+                switch accessorBlock.accessors {
+                case .getter:
+                    hasGetter = true
+                case .accessors(let list):
+                    hasGetter = list.contains(where: { accessor in
+                        switch accessor.accessorSpecifier.tokenKind {
+                        case .keyword(.get), .keyword(._read):
+                            return true
+                        default:
+                            return false
+                        }
+                    })
+                }
+                if hasGetter {
+                    return nil
+                }
+            }
+
             return varDecl
         }
 
